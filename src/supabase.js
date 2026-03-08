@@ -11,26 +11,28 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_KEY
 )
 
-// Only save messages from these WhatsApp groups
 const ALLOWED_GROUPS = [
-  'ISB Co\'27 Notice Board 📌',
-  'ISB Co\'27 - Mohali Campus',
-  'Doubts and Queries',
-  'ISB Co\'27 - General',
-  'ISB Co\'27 - Delhi NCR',
-  'ISB Co\'27 - Mumbai',
-  'Case preppers!',
+  "ISB Co'27 Notice Board 📌",
+  "ISB Co'27 - Mohali Campus",
+  "Doubts and Queries",
+  "ISB Co'27 - General",
+  "ISB Co'27 - Delhi NCR",
+  "ISB Co'27 - Mumbai",
+  "Case preppers!",
 ]
 
-// Cache of jid → group name to avoid repeated lookups
+// Normalize any apostrophe variant to plain single quote for comparison
+function normalize(str) {
+  return str.replace(/[\u2018\u2019\u02BC']/g, "'")
+}
+
+const ALLOWED_NORMALIZED = ALLOWED_GROUPS.map(normalize)
+
 const jidGroupCache = {}
 
 async function getGroupName(sock, jid) {
-  // Only process group JIDs (end with @g.us)
   if (!jid.endsWith('@g.us')) return null
-
   if (jidGroupCache[jid]) return jidGroupCache[jid]
-
   try {
     const meta = await sock.groupMetadata(jid)
     const name = meta?.subject ?? null
@@ -44,7 +46,6 @@ async function getGroupName(sock, jid) {
 async function saveMessage(msg, sock) {
   const jid = msg.key.remoteJid
 
-  // Only handle group messages
   if (!jid.endsWith('@g.us')) return false
 
   const groupName = await getGroupName(sock, jid)
@@ -54,28 +55,31 @@ async function saveMessage(msg, sock) {
     return false
   }
 
-  if (!ALLOWED_GROUPS.includes(groupName)) {
+  if (!ALLOWED_NORMALIZED.includes(normalize(groupName))) {
     console.log(`[filter] Skipping non-allowed group: ${groupName}`)
     return false
   }
 
-  console.log(`[msg] Saving message from allowed group: ${groupName}`)
+  console.log(`[msg] Saving message from: ${groupName}`)
+
+  const content = extractContent(msg)
+  const ts = new Date(Number(msg.messageTimestamp) * 1000).toISOString()
 
   const { error } = await supabase.from('whatsapp_messages').insert({
-    message_id:   msg.key.id,
-    chat_jid:     jid,
-    from_me:      msg.key.fromMe ?? false,
-    push_name:    msg.pushName ?? null,
-    message_type: getMessageType(msg),
-    content:      extractContent(msg),
-    media_url:    null,
-    ts:           new Date(Number(msg.messageTimestamp) * 1000).toISOString(),
-    raw:          msg,
-    status:       'received',
-    group_name:   groupName,
-    sender_name:  msg.pushName ?? null,
-    message_text: extractContent(msg),
-    message_timestamp: new Date(Number(msg.messageTimestamp) * 1000).toISOString(),
+    message_id:        msg.key.id,
+    chat_jid:          jid,
+    from_me:           msg.key.fromMe ?? false,
+    push_name:         msg.pushName ?? null,
+    message_type:      getMessageType(msg),
+    content:           content,
+    media_url:         null,
+    ts:                ts,
+    raw:               msg,
+    status:            'received',
+    group_name:        groupName,
+    sender_name:       msg.pushName ?? null,
+    message_text:      content,
+    message_timestamp: ts,
   })
 
   if (error) {
