@@ -100,7 +100,9 @@ async function connect() {
     }
 
     if (connection === 'close') {
-      const reason  = new Boom(lastDisconnect?.error)?.output?.statusCode
+      const boomErr = new Boom(lastDisconnect?.error)
+      const reason  = boomErr?.output?.statusCode
+      console.log(`[baileys] Disconnect detail:`, JSON.stringify(lastDisconnect?.error?.message), `| statusCode: ${reason}`, `| data:`, JSON.stringify(boomErr?.data))
       sessionStatus = 'disconnected'
       await upsertSession(SESSION_ID, 'disconnected')
 
