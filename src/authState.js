@@ -1,20 +1,18 @@
-/**
- * Supabase-backed auth state for Baileys.
- * Stores creds + keys in the `whatsapp_auth_keys` table so the session
- * survives Railway/Render container restarts.
- */
+'use strict'
 
-import { supabase } from './supabase.js'
-import {
-  initAuthCreds,
-  BufferJSON,
-  proto,
-} from '@whiskeysockets/baileys'
+const { createClient } = require('@supabase/supabase-js')
+
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_KEY
+)
 
 const TABLE = 'whatsapp_auth_keys'
 
-export async function useSupabaseAuthState(sessionId) {
-  // ── Read all keys for this session ────────────────────────────────────────
+async function useSupabaseAuthState(sessionId) {
+  const baileys = require('@whiskeysockets/baileys')
+  const { initAuthCreds, BufferJSON, proto } = baileys
+
   async function readData(id) {
     const { data } = await supabase
       .from(TABLE)
@@ -51,7 +49,6 @@ export async function useSupabaseAuthState(sessionId) {
       .eq('key_id', id)
   }
 
-  // ── Load or create creds ───────────────────────────────────────────────────
   const creds = (await readData('creds')) || initAuthCreds()
 
   return {
@@ -87,3 +84,5 @@ export async function useSupabaseAuthState(sessionId) {
     saveCreds: () => writeData('creds', creds),
   }
 }
+
+module.exports = { useSupabaseAuthState }

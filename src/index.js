@@ -1,28 +1,33 @@
-import 'dotenv/config'
-import http from 'http'
-import makeWASocket, {
+'use strict'
+
+require('dotenv').config()
+
+const http    = require('http')
+const baileys = require('@whiskeysockets/baileys')
+const {
+  default: makeWASocket,
   DisconnectReason,
   fetchLatestBaileysVersion,
   makeCacheableSignalKeyStore,
   isJidBroadcast,
-} from '@whiskeysockets/baileys'
-import { Boom } from '@hapi/boom'
-import qrcode from 'qrcode-terminal'
-import pino from 'pino'
+} = baileys
+const { Boom }  = require('@hapi/boom')
+const qrcode    = require('qrcode-terminal')
+const pino      = require('pino')
 
-import { useSupabaseAuthState }        from './authState.js'
-import { saveMessage, upsertSession, upsertContact } from './supabase.js'
-import { forwardToWebhook }            from './webhook.js'
+const { useSupabaseAuthState }                   = require('./authState')
+const { saveMessage, upsertSession, upsertContact } = require('./supabase')
+const { forwardToWebhook }                       = require('./webhook')
 
-const SESSION_ID = process.env.SESSION_ID || 'main-session'
-const PORT       = parseInt(process.env.PORT || '3000')
-const logger     = pino({ level: 'silent' })   // silence noisy Baileys logs
+const SESSION_ID    = process.env.SESSION_ID || 'main-session'
+const PORT          = parseInt(process.env.PORT || '3000')
+const logger        = pino({ level: 'silent' })
 
-let sock         = null
-let qrString     = null
-let sessionStatus = 'disconnected'
+let sock            = null
+let qrString        = null
+let sessionStatus   = 'disconnected'
 
-// ─── Health check server (required by Railway/Render) ────────────────────────
+// ─── Health check server ──────────────────────────────────────────────────────
 const server = http.createServer((req, res) => {
   if (req.url === '/health') {
     res.writeHead(200, { 'Content-Type': 'application/json' })
@@ -35,14 +40,13 @@ const server = http.createServer((req, res) => {
     return
   }
 
-  // QR code endpoint — poll this from your Lovable UI to show the QR
   if (req.url === '/qr') {
     if (qrString) {
       res.writeHead(200, { 'Content-Type': 'application/json' })
       res.end(JSON.stringify({ qr: qrString }))
     } else {
       res.writeHead(404, { 'Content-Type': 'application/json' })
-      res.end(JSON.stringify({ error: 'No QR available — session may already be active' }))
+      res.end(JSON.stringify({ error: 'No QR available — already connected?' }))
     }
     return
   }
@@ -52,7 +56,7 @@ const server = http.createServer((req, res) => {
 })
 
 server.listen(PORT, () => {
-  console.log(`[server] Health check listening on :${PORT}`)
+  console.log(`[server] Health check on :${PORT}`)
 })
 
 // ─── Connect ──────────────────────────────────────────────────────────────────
@@ -69,21 +73,19 @@ async function connect() {
       creds: state.creds,
       keys:  makeCacheableSignalKeyStore(state.keys, logger),
     },
-    printQRInTerminal: false,   // We handle QR ourselves
+    printQRInTerminal: false,
     markOnlineOnConnect: false,
     syncFullHistory: false,
   })
 
-  // ── Credentials updated → persist to Supabase ───────────────────────────
   sock.ev.on('creds.update', saveCreds)
 
-  // ── Connection lifecycle ──────────────────────────────────────────────────
   sock.ev.on('connection.update', async ({ connection, lastDisconnect, qr }) => {
     if (qr) {
-      qrString     = qr
+      qrString      = qr
       sessionStatus = 'qr'
       qrcode.generate(qr, { small: true })
-      console.log('[baileys] Scan the QR code above  ↑  (or GET /qr)')
+      console.log('[baileys] Scan the QR code above ↑  (or GET /qr)')
       await upsertSession(SESSION_ID, 'qr')
       await forwardToWebhook('qr', { qr })
     }
@@ -92,47 +94,39 @@ async function connect() {
       qrString      = null
       sessionStatus = 'connected'
       const phone   = sock.user?.id?.split(':')[0] ?? null
-      console.log(`[baileys] Connected  ✓  (${phone})`)
+      console.log(`[baileys] Connected ✓  (${phone})`)
       await upsertSession(SESSION_ID, 'connected', phone)
       await forwardToWebhook('connected', { phone })
     }
 
     if (connection === 'close') {
-      const reason = new Boom(lastDisconnect?.error)?.output?.statusCode
+      const reason  = new Boom(lastDisconnect?.error)?.output?.statusCode
       sessionStatus = 'disconnected'
       await upsertSession(SESSION_ID, 'disconnected')
 
       if (reason === DisconnectReason.loggedOut) {
-        console.log('[baileys] Logged out — delete auth keys and re-scan QR')
+        console.log('[baileys] Logged out — re-scan QR to reconnect')
         await forwardToWebhook('logged_out', {})
-        // Don't reconnect — user must re-authenticate
       } else {
         const delay = reason === DisconnectReason.restartRequired ? 1_000 : 5_000
-        console.log(`[baileys] Disconnected (reason: ${reason}) — reconnecting in ${delay}ms`)
+        console.log(`[baileys] Disconnected (${reason}) — reconnecting in ${delay}ms`)
         setTimeout(connect, delay)
       }
     }
   })
 
-  // ── Incoming messages ────────────────────────────────────────────────────
   sock.ev.on('messages.upsert', async ({ messages, type }) => {
-    if (type !== 'notify') return   // ignore history sync
+    if (type !== 'notify') return
 
     for (const msg of messages) {
       try {
-        // Skip broadcast/status messages
         if (isJidBroadcast(msg.key.remoteJid)) continue
         if (msg.key.remoteJid === 'status@broadcast') continue
 
         console.log(`[msg] ${msg.key.fromMe ? '→' : '←'} ${msg.key.remoteJid}`)
 
-        // 1. Persist to Supabase (triggers Realtime → your Lovable UI)
         await saveMessage(msg)
-
-        // 2. Keep contacts table fresh
         await upsertContact(msg.key.remoteJid, msg.pushName)
-
-        // 3. Notify Lovable webhook (optional, for instant push)
         await forwardToWebhook('message', {
           id:        msg.key.id,
           remoteJid: msg.key.remoteJid,
@@ -146,24 +140,17 @@ async function connect() {
     }
   })
 
-  // ── Message status updates (read receipts, delivery) ─────────────────────
   sock.ev.on('message-receipt.update', async (updates) => {
     for (const { key, receipt } of updates) {
-      try {
-        // Update message status in Supabase if needed
-        await forwardToWebhook('receipt', { key, receipt })
-      } catch (err) {
-        console.error('[receipt] error:', err)
-      }
+      await forwardToWebhook('receipt', { key, receipt }).catch(() => {})
     }
   })
 }
 
 connect().catch(console.error)
 
-// ── Graceful shutdown ────────────────────────────────────────────────────────
 process.on('SIGTERM', () => {
-  console.log('[server] SIGTERM received — shutting down')
+  console.log('[server] Shutting down')
   sock?.end()
   server.close()
   process.exit(0)
