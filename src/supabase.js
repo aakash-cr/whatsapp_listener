@@ -55,7 +55,7 @@ async function saveMessage(msg, sock) {
     return false
   }
 
-  if (!ALLOWED_NORMALIZED.includes(normalize(groupName))) {
+  if (!normalize(groupName).includes('ISB') && !['Doubts and Queries', 'Case preppers!'].includes(normalize(groupName))) {
     console.log(`[filter] Skipping non-allowed group: ${groupName}`)
     return false
   }
