@@ -1,5 +1,10 @@
 'use strict'
 
+// Polyfill crypto for Node.js 18
+if (!globalThis.crypto) {
+  globalThis.crypto = require('crypto').webcrypto
+}
+
 require('dotenv').config()
 
 const http    = require('http')
