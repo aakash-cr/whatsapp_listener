@@ -11,10 +11,59 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_KEY
 )
 
-async function saveMessage(msg) {
+// Only save messages from these WhatsApp groups
+const ALLOWED_GROUPS = [
+  'ISB Co\'27 Notice Board 📌',
+  'ISB Co\'27 - Mohali Campus',
+  'Doubts and Queries',
+  'ISB Co\'27 - General',
+  'ISB Co\'27 - Delhi NCR',
+  'ISB Co\'27 - Mumbai',
+  'Case preppers!',
+]
+
+// Cache of jid → group name to avoid repeated lookups
+const jidGroupCache = {}
+
+async function getGroupName(sock, jid) {
+  // Only process group JIDs (end with @g.us)
+  if (!jid.endsWith('@g.us')) return null
+
+  if (jidGroupCache[jid]) return jidGroupCache[jid]
+
+  try {
+    const meta = await sock.groupMetadata(jid)
+    const name = meta?.subject ?? null
+    if (name) jidGroupCache[jid] = name
+    return name
+  } catch {
+    return null
+  }
+}
+
+async function saveMessage(msg, sock) {
+  const jid = msg.key.remoteJid
+
+  // Only handle group messages
+  if (!jid.endsWith('@g.us')) return false
+
+  const groupName = await getGroupName(sock, jid)
+
+  if (!groupName) {
+    console.log(`[filter] Could not get group name for ${jid} — skipping`)
+    return false
+  }
+
+  if (!ALLOWED_GROUPS.includes(groupName)) {
+    console.log(`[filter] Skipping non-allowed group: ${groupName}`)
+    return false
+  }
+
+  console.log(`[msg] Saving message from allowed group: ${groupName}`)
+
   const { error } = await supabase.from('whatsapp_messages').insert({
     message_id:   msg.key.id,
-    chat_jid:     msg.key.remoteJid,
+    chat_jid:     jid,
     from_me:      msg.key.fromMe ?? false,
     push_name:    msg.pushName ?? null,
     message_type: getMessageType(msg),
@@ -23,11 +72,17 @@ async function saveMessage(msg) {
     ts:           new Date(Number(msg.messageTimestamp) * 1000).toISOString(),
     raw:          msg,
     status:       'received',
+    group_name:   groupName,
+    sender_name:  msg.pushName ?? null,
+    message_text: extractContent(msg),
+    message_timestamp: new Date(Number(msg.messageTimestamp) * 1000).toISOString(),
   })
 
   if (error) {
     if (error.code !== '23505') throw error
   }
+
+  return true
 }
 
 async function upsertSession(sessionId, status, phoneNumber = null) {

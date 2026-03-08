@@ -132,7 +132,7 @@ async function connect() {
 
         console.log(`[msg] ${msg.key.fromMe ? '→' : '←'} ${msg.key.remoteJid}`)
 
-        await saveMessage(msg)
+        await saveMessage(msg, sock)
         await upsertContact(msg.key.remoteJid, msg.pushName)
         await forwardToWebhook('message', {
           id:        msg.key.id,
