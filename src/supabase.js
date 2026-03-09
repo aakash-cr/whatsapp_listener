@@ -32,6 +32,19 @@ function getAnonymousId(senderJid) {
   return `User_${hash}`
 }
 
+// Sanitize message object to remove personal identifiers
+function sanitizeMessage(msg) {
+  const sanitized = JSON.parse(JSON.stringify(msg))
+  if (sanitized.pushName) delete sanitized.pushName
+  if (sanitized.notifyName) delete sanitized.notifyName
+  if (sanitized.verifiedName) delete sanitized.verifiedName
+  if (sanitized.key) {
+    if (sanitized.key.from) sanitized.key.from = sanitized.key.from.replace(/\d+/g, '0')
+    if (sanitized.key.participant) sanitized.key.participant = sanitized.key.participant.replace(/\d+/g, '0')
+  }
+  return sanitized
+}
+
 const jidGroupCache = {}
 
 async function getGroupName(sock, jid) {
@@ -68,6 +81,7 @@ async function saveMessage(msg, sock) {
   const ts = new Date(Number(msg.messageTimestamp) * 1000).toISOString()
   const senderJid = msg.key.from || msg.key.participant || null
   const anonymousId = getAnonymousId(senderJid)
+  const sanitizedMsg = sanitizeMessage(msg)
 
   const { error } = await supabase.from('whatsapp_messages').insert({
     message_id:        msg.key.id,
@@ -78,7 +92,7 @@ async function saveMessage(msg, sock) {
     content:           content,
     media_url:         null,
     ts:                ts,
-    raw:               msg,
+    raw:               sanitizedMsg,
     status:            'received',
     group_name:        groupName,
     sender_name:       anonymousId,
@@ -143,4 +157,4 @@ function extractContent(msg) {
   )
 }
 
-module.exports = { supabase, saveMessage, upsertSession, upsertContact, getAnonymousId }
+module.exports = { supabase, saveMessage, upsertSession, upsertContact, getAnonymousId, sanitizeMessage }
