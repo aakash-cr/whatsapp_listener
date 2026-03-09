@@ -24,6 +24,14 @@ function normalize(str) {
 
 const ALLOWED_NORMALIZED = ALLOWED_GROUPS.map(normalize)
 
+// Anonymize sender names using a hash-based ID for privacy
+function getAnonymousId(senderJid) {
+  if (!senderJid) return null
+  const crypto = require('crypto')
+  const hash = crypto.createHash('md5').update(senderJid).digest('hex').slice(0, 6)
+  return `User_${hash}`
+}
+
 const jidGroupCache = {}
 
 async function getGroupName(sock, jid) {
@@ -56,16 +64,16 @@ async function saveMessage(msg, sock) {
     return false
   }
 
-  console.log(`[msg] Saving message from: ${groupName}`)
-
   const content = extractContent(msg)
   const ts = new Date(Number(msg.messageTimestamp) * 1000).toISOString()
+  const senderJid = msg.key.from || msg.key.participant || null
+  const anonymousId = getAnonymousId(senderJid)
 
   const { error } = await supabase.from('whatsapp_messages').insert({
     message_id:        msg.key.id,
     chat_jid:          jid,
     from_me:           msg.key.fromMe ?? false,
-    push_name:         msg.pushName ?? null,
+    push_name:         anonymousId,
     message_type:      getMessageType(msg),
     content:           content,
     media_url:         null,
@@ -73,7 +81,7 @@ async function saveMessage(msg, sock) {
     raw:               msg,
     status:            'received',
     group_name:        groupName,
-    sender_name:       msg.pushName ?? null,
+    sender_name:       anonymousId,
     message_text:      content,
     message_timestamp: ts,
   })
@@ -135,4 +143,4 @@ function extractContent(msg) {
   )
 }
 
-module.exports = { supabase, saveMessage, upsertSession, upsertContact }
+module.exports = { supabase, saveMessage, upsertSession, upsertContact, getAnonymousId }

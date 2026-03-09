@@ -21,7 +21,7 @@ const qrcode    = require('qrcode-terminal')
 const pino      = require('pino')
 
 const { useSupabaseAuthState }                   = require('./authState')
-const { saveMessage, upsertSession, upsertContact } = require('./supabase')
+const { saveMessage, upsertSession, upsertContact, getAnonymousId } = require('./supabase')
 const { forwardToWebhook }                       = require('./webhook')
 
 const SESSION_ID    = process.env.SESSION_ID || 'main-session'
@@ -133,12 +133,14 @@ async function connect() {
         console.log(`[msg] ${msg.key.fromMe ? '→' : '←'} ${msg.key.remoteJid}`)
 
         await saveMessage(msg, sock)
-        await upsertContact(msg.key.remoteJid, msg.pushName)
+        const senderJid = msg.key.from || msg.key.participant || null
+        const anonymousId = getAnonymousId(senderJid)
+        await upsertContact(msg.key.remoteJid, anonymousId)
         await forwardToWebhook('message', {
           id:        msg.key.id,
           remoteJid: msg.key.remoteJid,
           fromMe:    msg.key.fromMe,
-          pushName:  msg.pushName,
+          pushName:  anonymousId,
           timestamp: msg.messageTimestamp,
         })
       } catch (err) {
