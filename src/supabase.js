@@ -13,12 +13,8 @@ const supabase = createClient(
 
 const ALLOWED_GROUPS = [
   "ISB Co'27 Notice Board 📌",
-  "ISB Co'27 - Mohali Campus",
   "Doubts and Queries",
   "ISB Co'27 - General",
-  "ISB Co'27 - Delhi NCR",
-  "ISB Co'27 - Mumbai",
-  "Case preppers!",
 ]
 
 // Normalize any apostrophe variant to plain single quote for comparison
@@ -55,7 +51,7 @@ async function saveMessage(msg, sock) {
     return false
   }
 
-  if (!normalize(groupName).includes('ISB') && !['Doubts and Queries', 'Case preppers!'].includes(normalize(groupName))) {
+  if (!ALLOWED_NORMALIZED.includes(normalize(groupName))) {
     console.log(`[filter] Skipping non-allowed group: ${groupName}`)
     return false
   }
