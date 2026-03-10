@@ -146,15 +146,15 @@ function sanitizeContent(text) {
   // Remove email addresses
   sanitized = sanitized.replace(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g, '[EMAIL]')
   
-  // Remove contact names/mentions (handling patterns like "Name mentioned", "@Name", "Name:")
-  // This handles names that appear as contacts - match capitalized names
-  sanitized = sanitized.replace(/\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2}\b/g, (match) => {
-    // Don't replace if it's in certain contexts like file extensions or special terms
-    if (match.match(/^(ISB|User|Co')/)) {
-      return '[NAME]'
-    }
-    return match
-  })
+  // Remove person names - match patterns like "ISB Rukshad", "John Doe", "Name Surname", etc.
+  // Look for sequences of capitalized words (typically names)
+  sanitized = sanitized.replace(/\b(?:ISB\s+)?[A-Z][a-z]+(?:\s+[A-Z][a-z]+)+\b/g, '[NAME]')
+  
+  // Also remove single capitalized words that are likely names (but not common words)
+  sanitized = sanitized.replace(/\b(?:Mr|Mrs|Ms|Dr|Prof)\.\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*/g, '[NAME]')
+  
+  // Remove User_XXXX pattern specifically
+  sanitized = sanitized.replace(/User_[a-zA-Z0-9]+/g, '[NAME]')
   
   return sanitized
 }
