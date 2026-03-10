@@ -40,6 +40,8 @@ function sanitizeMessage(msg) {
   if (sanitized.pushName) delete sanitized.pushName
   if (sanitized.notifyName) delete sanitized.notifyName
   if (sanitized.verifiedName) delete sanitized.verifiedName
+  if (sanitized.senderName) delete sanitized.senderName
+  if (sanitized.senderJid) delete sanitized.senderJid
   
   // Obfuscate JID numbers
   if (sanitized.key) {
@@ -48,21 +50,25 @@ function sanitizeMessage(msg) {
   }
   
   // Deep sanitization of all text content in message
-  const deepSanitize = (obj) => {
+  const deepSanitize = (obj, key) => {
+    // List of fields to completely remove (contain contact info)
+    const fieldsToRemove = ['displayName', 'vcard', 'name', 'phoneNumber', 'fullName', 'firstName', 'lastName', 'contactName']
+    
     if (typeof obj === 'string') {
       return sanitizeContent(obj)
     }
     if (Array.isArray(obj)) {
-      return obj.map(deepSanitize)
+      return obj.map((item, idx) => deepSanitize(item, idx))
     }
     if (obj !== null && typeof obj === 'object') {
       const result = {}
-      for (const [key, value] of Object.entries(obj)) {
-        // Skip certain keys but sanitize text content
-        if (key === 'displayName' || key === 'vcard' || key === 'name') {
-          delete result[key]
+      for (const [k, value] of Object.entries(obj)) {
+        // Remove any key that looks like it contains contact information
+        if (fieldsToRemove.includes(k) || k.toLowerCase().includes('name') || k.toLowerCase().includes('contact')) {
+          // Skip these fields entirely
+          continue
         } else {
-          result[key] = deepSanitize(value)
+          result[k] = deepSanitize(value, k)
         }
       }
       return result
@@ -185,11 +191,18 @@ function sanitizeContent(text) {
   // Remove any "ISB [Name/Surname]" patterns
   sanitized = sanitized.replace(/ISB\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*/g, '[REDACTED]')
   
-  // Remove any capitalized name-like patterns (FirstName LastName, FirstName Surname)
+  // Remove any multiple capitalized words (FirstName LastName, etc.)
   sanitized = sanitized.replace(/\b[A-Z][a-z]+\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?\b/g, '[REDACTED]')
+  
+  // Remove single capitalized words that appear after other text (likely names)
+  // Matches: space/comma + CapitalizedWord + comma/period/space/end
+  sanitized = sanitized.replace(/(?:\s|,)\b([A-Z][a-z]+)(?=[\s,.\n]|$)/g, ' [REDACTED]')
   
   // Remove mentions with @ symbol
   sanitized = sanitized.replace(/@[A-Za-z]+/g, '[REDACTED]')
+  
+  // Remove standalone single capitalized words that look like names (between punctuation)
+  sanitized = sanitized.replace(/[,\s]([A-Z][a-z]{3,})[,\s]/g, ' [REDACTED] ')
   
   return sanitized
 }
