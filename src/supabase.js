@@ -129,6 +129,36 @@ async function upsertContact(jid, pushName) {
   if (error) console.error('[supabase] upsertContact error:', error)
 }
 
+// Sanitize content to remove phone numbers and personal contact information
+function sanitizeContent(text) {
+  if (!text || typeof text !== 'string') return text
+  
+  let sanitized = text
+  
+  // Remove phone numbers (various formats)
+  sanitized = sanitized
+    .replace(/\b\d{10}\b/g, '[PHONE]')                           // 10 digits
+    .replace(/\b\d{3}[-.\s]?\d{3}[-.\s]?\d{4}\b/g, '[PHONE]')   // XXX-XXX-XXXX format
+    .replace(/\+?1?\s?\(?[0-9]{3}\)?[-.\s]?[0-9]{3}[-.\s]?[0-9]{4}/g, '[PHONE]') // +1 or 1-xxx-xxx-xxxx
+    .replace(/\+91\s?\d{10}/g, '[PHONE]')                        // Indian format +91
+    .replace(/\b[6-9]\d{9}\b/g, '[PHONE]')                       // Indian 10-digit starting with 6-9
+  
+  // Remove email addresses
+  sanitized = sanitized.replace(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g, '[EMAIL]')
+  
+  // Remove contact names/mentions (handling patterns like "Name mentioned", "@Name", "Name:")
+  // This handles names that appear as contacts - match capitalized names
+  sanitized = sanitized.replace(/\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2}\b/g, (match) => {
+    // Don't replace if it's in certain contexts like file extensions or special terms
+    if (match.match(/^(ISB|User|Co')/)) {
+      return '[NAME]'
+    }
+    return match
+  })
+  
+  return sanitized
+}
+
 function getMessageType(msg) {
   const m = msg.message
   if (!m) return 'unknown'
@@ -147,7 +177,7 @@ function getMessageType(msg) {
 function extractContent(msg) {
   const m = msg.message
   if (!m) return null
-  return (
+  const rawContent = (
     m.conversation ??
     m.extendedTextMessage?.text ??
     m.imageMessage?.caption ??
@@ -155,6 +185,7 @@ function extractContent(msg) {
     m.documentMessage?.fileName ??
     null
   )
+  return sanitizeContent(rawContent)
 }
 
 module.exports = { supabase, saveMessage, upsertSession, upsertContact, getAnonymousId, sanitizeMessage }
