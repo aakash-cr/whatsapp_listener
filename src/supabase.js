@@ -137,24 +137,26 @@ function sanitizeContent(text) {
   
   // Remove phone numbers (various formats)
   sanitized = sanitized
-    .replace(/\b\d{10}\b/g, '[PHONE]')                           // 10 digits
-    .replace(/\b\d{3}[-.\s]?\d{3}[-.\s]?\d{4}\b/g, '[PHONE]')   // XXX-XXX-XXXX format
-    .replace(/\+?1?\s?\(?[0-9]{3}\)?[-.\s]?[0-9]{3}[-.\s]?[0-9]{4}/g, '[PHONE]') // +1 or 1-xxx-xxx-xxxx
-    .replace(/\+91\s?\d{10}/g, '[PHONE]')                        // Indian format +91
-    .replace(/\b[6-9]\d{9}\b/g, '[PHONE]')                       // Indian 10-digit starting with 6-9
+    .replace(/\b\d{10}\b/g, '[REDACTED]')                        // 10 digits
+    .replace(/\b\d{3}[-.\s]?\d{3}[-.\s]?\d{4}\b/g, '[REDACTED]') // XXX-XXX-XXXX format
+    .replace(/\+?1?\s?\(?[0-9]{3}\)?[-.\s]?[0-9]{3}[-.\s]?[0-9]{4}/g, '[REDACTED]') // +1 or 1-xxx-xxx-xxxx
+    .replace(/\+91\s?\d{10}/g, '[REDACTED]')                     // Indian format +91
+    .replace(/\b[6-9]\d{9}\b/g, '[REDACTED]')                    // Indian 10-digit starting with 6-9
   
   // Remove email addresses
-  sanitized = sanitized.replace(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g, '[EMAIL]')
-  
-  // Remove person names - match patterns like "ISB Rukshad", "John Doe", "Name Surname", etc.
-  // Look for sequences of capitalized words (typically names)
-  sanitized = sanitized.replace(/\b(?:ISB\s+)?[A-Z][a-z]+(?:\s+[A-Z][a-z]+)+\b/g, '[NAME]')
-  
-  // Also remove single capitalized words that are likely names (but not common words)
-  sanitized = sanitized.replace(/\b(?:Mr|Mrs|Ms|Dr|Prof)\.\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*/g, '[NAME]')
+  sanitized = sanitized.replace(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g, '[REDACTED]')
   
   // Remove User_XXXX pattern specifically
-  sanitized = sanitized.replace(/User_[a-zA-Z0-9]+/g, '[NAME]')
+  sanitized = sanitized.replace(/User_[a-zA-Z0-9]+/g, '[REDACTED]')
+  
+  // Remove any "ISB [Name/Surname]" patterns
+  sanitized = sanitized.replace(/ISB\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*/g, '[REDACTED]')
+  
+  // Remove any capitalized name-like patterns (FirstName LastName, FirstName Surname)
+  sanitized = sanitized.replace(/\b[A-Z][a-z]+\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?\b/g, '[REDACTED]')
+  
+  // Remove mentions with @ symbol
+  sanitized = sanitized.replace(/@[A-Za-z]+/g, '[REDACTED]')
   
   return sanitized
 }
