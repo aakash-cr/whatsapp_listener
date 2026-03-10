@@ -32,16 +32,49 @@ function getAnonymousId(senderJid) {
   return `User_${hash}`
 }
 
-// Sanitize message object to remove personal identifiers
+// Sanitize message object to remove personal identifiers recursively
 function sanitizeMessage(msg) {
   const sanitized = JSON.parse(JSON.stringify(msg))
+  
+  // Remove top-level name fields
   if (sanitized.pushName) delete sanitized.pushName
   if (sanitized.notifyName) delete sanitized.notifyName
   if (sanitized.verifiedName) delete sanitized.verifiedName
+  
+  // Obfuscate JID numbers
   if (sanitized.key) {
     if (sanitized.key.from) sanitized.key.from = sanitized.key.from.replace(/\d+/g, '0')
     if (sanitized.key.participant) sanitized.key.participant = sanitized.key.participant.replace(/\d+/g, '0')
   }
+  
+  // Deep sanitization of all text content in message
+  const deepSanitize = (obj) => {
+    if (typeof obj === 'string') {
+      return sanitizeContent(obj)
+    }
+    if (Array.isArray(obj)) {
+      return obj.map(deepSanitize)
+    }
+    if (obj !== null && typeof obj === 'object') {
+      const result = {}
+      for (const [key, value] of Object.entries(obj)) {
+        // Skip certain keys but sanitize text content
+        if (key === 'displayName' || key === 'vcard' || key === 'name') {
+          delete result[key]
+        } else {
+          result[key] = deepSanitize(value)
+        }
+      }
+      return result
+    }
+    return obj
+  }
+  
+  // Apply deep sanitization to the message content
+  if (sanitized.message) {
+    sanitized.message = deepSanitize(sanitized.message)
+  }
+  
   return sanitized
 }
 
